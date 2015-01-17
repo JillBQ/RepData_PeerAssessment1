@@ -4,22 +4,162 @@ output:
   html_document:
     keep_md: true
 ---
+Loading Libraries
+```{r LoadLibraries}
+      library(knitr)
+      library(sqldf)
+```
 
+Setting Global Echo to TRUE
+```{r setoptions, echo=TRUE}
+      opts_chunk$set(echo=TRUE)
+```
 
 ## Loading and preprocessing the data
-
-
+```{r LoadData}
+      activity <- read.csv("activity.csv")
+      activity$steps <- as.numeric(activity$steps)
+      activity$date <- as.Date(activity$date, "%Y-%m-%d")
+      activity$interval <- as.numeric(activity$interval)
+      #head(activity)
+      #str(activity)
+      #summary(activity)
+```
 
 ## What is mean total number of steps taken per day?
 
+####Histogram 
+```{r StepsDayHist}
+      df <- sqldf(
+            "select *
+            from activity
+            where steps is not null")
 
+      df2 <- sqldf(
+            "select date, sum(steps) AS tot_steps
+            from df
+            group by date")
+
+      with(df2, plot(date, tot_steps, ylab = "total steps", type = "h"))
+```
+
+####Mean and Median of Total Steps per Day
+```{r StepsDayCalc}
+      df3 <- sqldf(
+            "select date, avg(steps) AS mean_steps, median(steps) AS median_steps
+            from df
+            group by date")
+      df3
+```
 
 ## What is the average daily activity pattern?
 
+####Times Series 
+```{r AvgDailyActivity}
+      df4 <- sqldf(
+            "select interval, avg(steps) AS mean_steps
+            from df
+            group by interval")
 
+      with(df4, plot(interval, mean_steps, ylab = "mean steps", type = "l"))
+```
+
+####Intereval with the Maximum Number of Steps
+```{r AvgDailyMax}
+      df5 <- sqldf(
+            "select interval, mean_steps AS steps
+            from df4
+            where mean_steps =
+                  (select max(mean_steps)
+                  from df4)")
+
+      df5
+```
 
 ## Imputing missing values
 
+####Total Missing Values
+```{r MissTotal}
+      df6 <- sqldf(
+            "select *
+                  from activity
+                  where steps is null")
 
+      nrow(df6)
+```
+
+####Imputing Missing Values with Interval Mean
+```{r MissComp}
+activity2 <- sqldf(
+      "select 
+            case
+                  when a.steps is null then mean_steps
+                  else a.steps 
+            end AS steps, 
+            a.date,
+            a.interval
+      from activity a
+            left outer join df4 d on a.interval= d.interval")
+```
+
+####Histogram with Imputed Data
+```{r StepsDayHist2}
+      df7 <- sqldf(
+            "select date, sum(steps) AS tot_steps
+            from activity2
+            group by date")
+
+      with(df7, plot(date, tot_steps, type = "h"))
+```
+
+####Mean and Median of Total Steps per Day with Imputed Data
+```{r StepsDayCalc2}
+      df8 <- sqldf(
+            "select date, avg(steps) AS mean_steps, median(steps) AS median_steps
+            from activity2
+            group by date")
+      df8
+```
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+####Creating Day Type Variable
+```{r DayType}
+      day_type <- weekdays(activity2$date)
+
+      df9 <- cbind(activity2, day_type)
+
+      df10 <- sqldf(
+            "select steps,
+            date,
+            interval,
+            case
+                  when day_type in ('Saturday', 'Sunday') then 'weekend'
+                  when day_type is null then null
+                  else 'weekday'
+            end as day_type
+            from df9")
+```
+
+####Panel Plot
+```{r DayTypePlot}
+df11_wday <- sqldf(
+      "select interval, avg(steps) as mean_steps
+      from df10
+      where day_type = 'weekday'
+      group by interval")
+
+df11_wend <- sqldf(
+      "select interval, avg(steps) as mean_steps
+      from df10
+      where day_type = 'weekend'
+      group by interval")
+
+par(mfcol = c(2, 1))
+
+with(df11_wend, plot(interval, mean_steps, type = "l", main="weekend", xlab = "Interval", ylab="Avg Number of Steps"))
+
+with(df11_wday, plot(interval, mean_steps, type = "l", main="weekday", xlab="Interval", ylab="Avg Number of Steps"))
+
+par(mfcol = c(1, 1))
+```
